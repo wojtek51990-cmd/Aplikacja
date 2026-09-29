@@ -43,15 +43,6 @@ android {
         jniLibs { useLegacyPackaging = false }
     }
 
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a")
-            isUniversalApk = false
-        }
-    }
-
     externalNativeBuild {
         ndkBuild { path = file("src/main/jni/Android.mk") }
     }
