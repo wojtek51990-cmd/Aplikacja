@@ -1,0 +1,125 @@
+name: Full repository and APK inventory
+
+on:
+  push:
+    paths-ignore:
+      - "inventory/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Inventory repository and archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inventory
+          REPORT="inventory/FULL_INVENTORY.md"
+          TSV="inventory/FULL_INVENTORY.tsv"
+
+          echo "# Aplikacja — pełna inwentaryzacja" > "$REPORT"
+          echo >> "$REPORT"
+          echo "Wygenerowano: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$REPORT"
+          echo >> "$REPORT"
+          echo "## 1. Wszystkie pliki repozytorium" >> "$REPORT"
+          echo >> "$REPORT"
+          echo "Rozmiar bajtów | SHA-256 | Ścieżka" >> "$REPORT"
+          echo "--- | --- | ---" >> "$REPORT"
+          : > "$TSV"
+
+          git ls-files -z | while IFS= read -r -d '' f; do
+            size=$(stat -c '%s' "$f")
+            sha=$(sha256sum "$f" | awk '{print $1}')
+            printf '%s\t%s\t%s\n' "$size" "$sha" "$f" >> "$TSV"
+          done
+
+          sort -n "$TSV" | while IFS=$'\t' read -r size sha f; do
+            printf '%s | %s | %s\n' "$size" "$sha" "$f" >> "$REPORT"
+          done
+
+          echo >> "$REPORT"
+          echo "## 2. Archiwa APK / ZIP / AAB" >> "$REPORT"
+          echo >> "$REPORT"
+
+          found=0
+          while IFS= read -r -d '' archive; do
+            found=1
+            rel=$(printf '%s' "$archive" | sed 's#^\./##')
+            size=$(stat -c '%s' "$archive")
+            sha=$(sha256sum "$archive" | awk '{print $1}')
+            echo "### $rel" >> "$REPORT"
+            echo >> "$REPORT"
+            echo "Rozmiar: $size bajtów" >> "$REPORT"
+            echo "SHA-256: $sha" >> "$REPORT"
+            echo >> "$REPORT"
+            echo "Zawartość archiwum:" >> "$REPORT"
+            python3 - "$archive" >> "$REPORT" <<'PY'
+import sys, zipfile
+p=sys.argv[1]
+try:
+    with zipfile.ZipFile(p) as z:
+        for i in z.infolist():
+            print(f"{i.file_size}\t{i.compress_size}\t{i.filename}")
+except zipfile.BadZipFile:
+    print("BAD_ZIP")
+PY
+            echo >> "$REPORT"
+
+            case "$rel" in
+              *.apk)
+                echo "Struktura APK — biblioteki natywne, DEX, assets, res i META-INF:" >> "$REPORT"
+                python3 - "$archive" >> "$REPORT" <<'PY'
+import sys, zipfile
+p=sys.argv[1]
+with zipfile.ZipFile(p) as z:
+    for n in z.namelist():
+        if n.startswith(("lib/","assets/","res/","META-INF/")) or n.endswith(".dex") or n == "AndroidManifest.xml":
+            print(n)
+PY
+                echo >> "$REPORT"
+                AAPT2=$(find "$ANDROID_HOME" -type f -name aapt2 2>/dev/null | head -n 1 || true)
+                if [ -n "$AAPT2" ]; then
+                  echo "aapt2 dump badging:" >> "$REPORT"
+                  "$AAPT2" dump badging "$archive" >> "$REPORT" 2>&1 || true
+                  echo >> "$REPORT"
+                fi
+                ;;
+            esac
+          done < <(find . -type f \( -iname '*.zip' -o -iname '*.apk' -o -iname '*.aab' \) -print0 | sort -z)
+
+          if [ "$found" -eq 0 ]; then
+            echo "Nie znaleziono plików .zip/.apk/.aab." >> "$REPORT"
+          fi
+
+          echo "## 3. Git" >> "$REPORT"
+          echo >> "$REPORT"
+          echo "Commit: $(git rev-parse HEAD)" >> "$REPORT"
+          echo "Branch: $(git branch --show-current || true)" >> "$REPORT"
+          echo >> "$REPORT"
+          echo "Raport nie zmienia oryginalnych APK/ZIP/AAB." >> "$REPORT"
+
+          echo "Inventory generated:"
+          wc -c "$REPORT" "$TSV"
+
+      - name: Commit inventory report
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add inventory/FULL_INVENTORY.md inventory/FULL_INVENTORY.tsv
+          if git diff --cached --quiet; then
+            echo "No inventory changes."
+            exit 0
+          fi
+          git commit -m "Add full repository and APK inventory"
+          git push
