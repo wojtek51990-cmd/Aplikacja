@@ -14,60 +14,91 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install APK analysis tools
+      - name: Install analysis tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zip file aapt apktool
-          apktool --version
-          aapt version
+          sudo apt-get install -y unzip zip file curl jq poppler-utils
+          curl -L --fail --retry 3 -o /tmp/jadx.zip https://github.com/skylot/jadx/releases/download/v1.5.6/jadx-1.5.6.zip
+          rm -rf /tmp/jadx
+          mkdir -p /tmp/jadx
+          unzip -q /tmp/jadx.zip -d /tmp/jadx
+          chmod +x /tmp/jadx/bin/jadx
+          /tmp/jadx/bin/jadx --version
+          java -version
 
       - name: Unpack archive and inspect APKs
         run: |
+          set -euo pipefail
           mkdir -p analysis
           unzip -o "My+Scooty_1.0.13_APKPure.zip" -d analysis/input
+
           echo "=== ARCHIVE CONTENTS ===" | tee analysis/report.txt
           find analysis/input -type f -printf '%p %s bytes\n' | tee -a analysis/report.txt
 
-          for apk in $(find analysis/input -type f -name "*.apk"); do
+          for apk in $(find analysis/input -type f -name "*.apk" | sort); do
             name=$(basename "$apk" .apk)
             dir="analysis/$name"
             mkdir -p "$dir"
+
             echo "" | tee -a analysis/report.txt
             echo "===== APK: $apk =====" | tee -a analysis/report.txt
             file "$apk" | tee -a analysis/report.txt
             sha256sum "$apk" | tee "$dir/sha256.txt"
-            echo "--- AAPT BADGING ---" | tee -a analysis/report.txt
-            aapt dump badging "$apk" 2>&1 | tee "$dir/badging.txt" | tee -a analysis/report.txt
-            echo "--- NATIVE LIBRARIES ---" | tee -a analysis/report.txt
-            unzip -l "$apk" | grep -E "lib/[^/]+/.*\\.(so|so\\.gz)$" | tee "$dir/native-libs.txt" || true
-            echo "--- DEX FILES ---" | tee -a analysis/report.txt
-            unzip -l "$apk" | grep -E "\\.dex$" | tee "$dir/dex.txt" || true
-            echo "--- TOP-LEVEL FILES ---" | tee "$dir/list.txt"
-            unzip -l "$apk" | head -120 | tee -a "$dir/list.txt"
-            echo "--- APKTOOL DECODE ---" | tee -a analysis/report.txt
-            apktool d -f "$apk" -o "$dir/decoded" 2>&1 | tee "$dir/apktool.txt"
+
+            echo "--- ZIP CONTENTS / DEX / NATIVE LIBS ---" | tee "$dir/layout.txt"
+            unzip -l "$apk" | tee -a "$dir/layout.txt"
+            unzip -l "$apk" | grep -E '/classes[0-9]*\\.dex$' | tee "$dir/dex.txt" || true
+            unzip -l "$apk" | grep -E '(^|/)lib/[^/]+/.*\\.(so|so\\.gz)$' | tee "$dir/native-libs.txt" || true
+
+            echo "--- JADX DECOMPILE ---" | tee "$dir/jadx.txt"
+            /tmp/jadx/bin/jadx               --show-bad-code               --deobf               -d "$dir/jadx"               "$apk" 2>&1 | tee -a "$dir/jadx.txt"
+
+            echo "--- TARGETED BLE SOURCE INDEX ---" | tee "$dir/ble-index.txt"
+            grep -RInE               'Bluetooth|BLE|Gatt|GATT|BleSdk|BleConstance|BleConnect|Characteristic|Descriptor|notify|writeCharacteristic|readCharacteristic|setCharacteristicNotification|onCharacteristic|UUID|CRC|Packet|Channel'               "$dir/jadx/sources" 2>/dev/null | head -n 400 | tee -a "$dir/ble-index.txt" || true
+
+            echo "--- UUIDS AND PROTOCOL CONSTANTS ---" | tee "$dir/uuid-index.txt"
+            grep -RInE               '[0-9a-fA-F]{4,8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|0000[0-9a-fA-F]{4}-0000-1000-8000-00805f9b34fb|0x([0-9A-Fa-f]{2,4})'               "$dir/jadx/sources" "$dir/jadx/resources" 2>/dev/null | head -n 500 | tee -a "$dir/uuid-index.txt" || true
           done
 
-      - name: Create detailed inventory
+      - name: Extract application manual
         run: |
+          set -euo pipefail
+          mkdir -p analysis/manual
+          unzip -p analysis/input/com.li.scooty.apk assets/manual_APP_PL_new.pdf > analysis/manual/manual_APP_PL_new.pdf
+          pdftotext -layout analysis/manual/manual_APP_PL_new.pdf analysis/manual/manual_APP_PL_new.txt || true
+          sed -n '1,800p' analysis/manual/manual_APP_PL_new.txt > analysis/manual/manual_excerpt.txt || true
+
+      - name: Build consolidated protocol report
+        run: |
+          set -euo pipefail
           {
-            echo "=== DECODED FILE INVENTORY ==="
-            find analysis -type f -not -path "analysis/input/*" -printf '%p %s bytes\n' | sort
+            echo "=== MY SCOOTY APK REVERSE-ENGINEERING REPORT ==="
+            echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo ""
-            echo "=== MANIFESTS ==="
-            find analysis -path "*/decoded/AndroidManifest.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,260p" "$1"' _ {} \;
+            echo "=== APPLICATION MANIFEST / PACKAGE ==="
+            if command -v aapt >/dev/null 2>&1; then
+              aapt dump badging analysis/input/com.li.scooty.apk || true
+            fi
             echo ""
-            echo "=== RESOURCE STRINGS ==="
-            find analysis -path "*/decoded/res/values*/strings.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,260p" "$1"' _ {} \;
+            echo "=== NATIVE LIBRARIES IN ALL APK SPLITS ==="
+            for f in analysis/*/native-libs.txt; do
+              echo "--- $f"
+              cat "$f"
+            done
             echo ""
-            echo "=== JAVA/SMALI COUNTS ==="
-            find analysis -path "*/decoded/smali*" -type f | wc -l
-            find analysis -path "*/decoded/smali*" -type f -name "*.smali" | head -50
-          } > analysis/inventory.txt
+            echo "=== BLE / GATT REFERENCES ==="
+            cat analysis/com.li.scooty/ble-index.txt || true
+            echo ""
+            echo "=== UUID / PROTOCOL REFERENCES ==="
+            cat analysis/com.li.scooty/uuid-index.txt || true
+            echo ""
+            echo "=== POLISH MANUAL EXCERPT ==="
+            cat analysis/manual/manual_excerpt.txt || true
+          } > analysis/protocol-report.txt
 
       - name: Upload analysis
         uses: actions/upload-artifact@v4
         with:
           name: My-Scooty-APK-analysis
           path: analysis
-          retention-days: 7
+          retention-days: 14
