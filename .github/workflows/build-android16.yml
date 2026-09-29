@@ -45,3 +45,5 @@ jobs:
           name: MyScooty-Android16-ARM64-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+      # First migration build: compile/target API 36 and ARM64 variant.
