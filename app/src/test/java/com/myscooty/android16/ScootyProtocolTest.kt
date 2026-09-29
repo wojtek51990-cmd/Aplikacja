@@ -107,4 +107,30 @@ class ScootyProtocolTest {
         unknown[16] = 0x77
         assertNull(ScootyProtocol.parse(unknown))
     }
+
+    @Test
+    fun originalBleProfilesArePresent() {
+        assertEquals(3, ScootyProtocol.PROFILES.size)
+        assertEquals(
+            "0000AB00-0000-1000-8000-00805F9B34FB",
+            ScootyProtocol.PROFILES[0].serviceUuid.toString().uppercase()
+        )
+        assertEquals(
+            "0000FF12-0000-1000-8000-00805F9B34FB",
+            ScootyProtocol.PROFILES[1].serviceUuid.toString().uppercase()
+        )
+        assertEquals(
+            "0000AD00-0000-1000-8000-00805F9B34FB",
+            ScootyProtocol.PROFILES[2].serviceUuid.toString().uppercase()
+        )
+    }
+
+    @Test
+    fun originalCommandIsEightBytes() {
+        assertEquals(
+            "CC 09 01 00 00 00 C4 FE",
+            ScootyProtocol.hex(ScootyProtocol.command(9, 1))
+        )
+        assertEquals(12, ScootyProtocol.repeatedCommand(9, 1).size)
+    }
 }
