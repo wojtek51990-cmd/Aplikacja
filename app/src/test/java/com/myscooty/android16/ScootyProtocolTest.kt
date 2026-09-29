@@ -126,6 +126,19 @@ class ScootyProtocolTest {
     }
 
     @Test
+    fun allOriginalCommandIdsAreStable() {
+        assertEquals(2, ScootyProtocol.CMD_GEAR)
+        assertEquals(3, ScootyProtocol.CMD_SHUTDOWN)
+        assertEquals(4, ScootyProtocol.CMD_CRUISE)
+        assertEquals(5, ScootyProtocol.CMD_HOME_LOCK)
+        assertEquals(6, ScootyProtocol.CMD_UNIT)
+        assertEquals(9, ScootyProtocol.CMD_LIGHT)
+        assertEquals(11, ScootyProtocol.CMD_MODE)
+        assertEquals(12, ScootyProtocol.CMD_POWER_OFF_TIME)
+        assertEquals(24, ScootyProtocol.CMD_FACTORY_RESET)
+    }
+
+    @Test
     fun originalCommandIsEightBytes() {
         assertEquals(
             "CC 09 01 00 00 00 C4 FE",
