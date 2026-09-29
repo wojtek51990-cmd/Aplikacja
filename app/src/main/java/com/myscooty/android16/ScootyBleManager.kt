@@ -41,6 +41,7 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
     private var gatt: BluetoothGatt? = null
     private var writeCharacteristic: BluetoothGattCharacteristic? = null
     private var notifyCharacteristic: BluetoothGattCharacteristic? = null
+    private var activeProfile: ScootyBleProfile? = null
     private var scanning = false
     private var notificationsReady = false
 
@@ -112,11 +113,13 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
         }
 
         stopScan()
+        handler.removeCallbacksAndMessages(null)
         writeQueue.clear()
         writeInProgress = false
         notificationsReady = false
         writeCharacteristic = null
         notifyCharacteristic = null
+        activeProfile = null
 
         gatt?.close()
         gatt = null
@@ -142,7 +145,7 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
 
     fun sendCommand(command: Int, value: Int) {
         ScootyProtocol.repeatedCommand(command, value).forEach(::enqueueWrite)
-        listener.onStatus("Wysyłam komendę " + command + " = " + value)
+        listener.onStatus("Wysyłam komendę " + command + " = " + value + " (12×)")
     }
 
     fun sendRaw(bytes: ByteArray, repeat: Int = 1) {
@@ -173,31 +176,34 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
 
         val characteristic = writeCharacteristic ?: run {
             writeQueue.clear()
-            listener.onError("Nie znaleziono charakterystyki zapisu AB01")
+            listener.onError("Nie znaleziono charakterystyki zapisu")
             return
         }
 
-        val data = writeQueue.first
+        val data = writeQueue.removeFirst()
         writeInProgress = true
 
         val status = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             g.writeCharacteristic(
                 characteristic,
                 data,
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
             )
         } else {
-            characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
             characteristic.value = data
             if (g.writeCharacteristic(characteristic)) BluetoothGatt.GATT_SUCCESS else 1
         }
 
         if (status != BluetoothGatt.GATT_SUCCESS) {
             writeInProgress = false
-            writeQueue.removeFirst()
             listener.onError("Błąd zapisu BLE: $status")
-            handler.post { drainWriteQueue() }
+            handler.postDelayed({ drainWriteQueue() }, ScootyProtocol.COMMAND_INTERVAL_MS)
+            return
         }
+
+        writeInProgress = false
+        handler.postDelayed({ drainWriteQueue() }, ScootyProtocol.COMMAND_INTERVAL_MS)
     }
 
     @SuppressLint("MissingPermission")
@@ -205,12 +211,16 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
         stopScan()
         handler.removeCallbacksAndMessages(null)
         writeQueue.clear()
+        writeInProgress = false
         gatt?.close()
         gatt = null
         writeCharacteristic = null
         notifyCharacteristic = null
+        activeProfile = null
         notificationsReady = false
     }
+
+    fun currentProfile(): ScootyBleProfile? = activeProfile
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
@@ -235,6 +245,7 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
                     notificationsReady = false
                     writeCharacteristic = null
                     notifyCharacteristic = null
+                    activeProfile = null
                     writeQueue.clear()
                     writeInProgress = false
                     listener.onStatus("Rozłączono BLE")
@@ -253,35 +264,50 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
 
             listener.onServicesDiscovered(g, g.services)
 
-            val service = g.getService(ScootyProtocol.serviceUuid())
-                ?: g.services.firstOrNull {
-                    it.uuid.toString().equals(ScootyProtocol.SERVICE_UUID, ignoreCase = true)
+            var selectedService: BluetoothGattService? = null
+            var selected: ScootyBleProfile? = null
+            for (service in g.services) {
+                val profile = ScootyProtocol.profileForService(service.uuid) ?: continue
+                val notify = service.getCharacteristic(profile.notifyUuid)
+                val write = service.getCharacteristic(profile.writeUuid)
+                if (notify != null && write != null) {
+                    selectedService = service
+                    selected = profile
+                    break
                 }
+            }
 
-            if (service == null) {
-                listener.onError("Nie znaleziono usługi My Scooty AB00")
+            if (selectedService == null || selected == null) {
+                listener.onError("Nie znaleziono zgodnego profilu My Scooty (AB/FF/AD)")
                 return
             }
 
-            writeCharacteristic = service.getCharacteristic(ScootyProtocol.writeUuid())
-            notifyCharacteristic = service.getCharacteristic(ScootyProtocol.notifyUuid())
+            activeProfile = selected
+            writeCharacteristic = selectedService.getCharacteristic(selected.writeUuid)
+            notifyCharacteristic = selectedService.getCharacteristic(selected.notifyUuid)
 
-            if (writeCharacteristic == null || notifyCharacteristic == null) {
-                listener.onError("Brak AB01/AB02 — urządzenie nie udostępnia protokołu My Scooty")
+            val notify = notifyCharacteristic ?: run {
+                listener.onError("Brak charakterystyki powiadomień " + selected.notifyUuid)
+                return
+            }
+            val write = writeCharacteristic ?: run {
+                listener.onError("Brak charakterystyki zapisu " + selected.writeUuid)
                 return
             }
 
             @SuppressLint("MissingPermission")
-            val localNotify = g.setCharacteristicNotification(notifyCharacteristic, true)
+            val localNotify = g.setCharacteristicNotification(notify, true)
             if (!localNotify) {
                 listener.onError("Nie udało się włączyć powiadomień BLE")
                 return
             }
 
-            val cccd = notifyCharacteristic?.getDescriptor(ScootyProtocol.cccdUuid())
+            val cccd = notify.getDescriptor(ScootyProtocol.cccdUuid())
             if (cccd == null) {
                 notificationsReady = true
-                listener.onStatus("BLE gotowe — AB01 zapis / AB02 powiadomienia")
+                listener.onStatus(
+                    "BLE gotowe — profil " + selected.name + ": " + selected.serviceUuid
+                )
                 return
             }
 
@@ -298,6 +324,11 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
 
             if (descriptorStatus != BluetoothGatt.GATT_SUCCESS) {
                 listener.onError("Błąd włączania powiadomień: $descriptorStatus")
+            } else {
+                listener.onStatus(
+                    "Wybrano profil " + selected.name +
+                        " — RX " + notify.uuid + ", TX " + write.uuid
+                )
             }
         }
 
@@ -309,9 +340,13 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
             if (descriptor.uuid == ScootyProtocol.cccdUuid()) {
                 notificationsReady = status == BluetoothGatt.GATT_SUCCESS
                 if (notificationsReady) {
-                    listener.onStatus("BLE gotowe — AB01 zapis / AB02 powiadomienia")
+                    val p = activeProfile
+                    listener.onStatus(
+                        if (p == null) "BLE gotowe"
+                        else "BLE gotowe — profil " + p.name + " / zapis NO RESPONSE"
+                    )
                 } else {
-                    listener.onError("CCCD AB02 nie został zapisany: $status")
+                    listener.onError("CCCD nie został zapisany: $status")
                 }
             }
         }
@@ -321,7 +356,9 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
             g: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic
         ) {
-            listener.onNotification(characteristic.value?.copyOf() ?: return)
+            if (characteristic.uuid == notifyCharacteristic?.uuid) {
+                listener.onNotification(characteristic.value?.copyOf() ?: return)
+            }
         }
 
         override fun onCharacteristicChanged(
@@ -329,23 +366,9 @@ class ScootyBleManager(context: Context, private val listener: Listener) {
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
-            listener.onNotification(value.copyOf())
-        }
-
-        override fun onCharacteristicWrite(
-            g: BluetoothGatt,
-            characteristic: BluetoothGattCharacteristic,
-            status: Int
-        ) {
-            if (characteristic.uuid != writeCharacteristic?.uuid) return
-            if (writeQueue.isNotEmpty()) writeQueue.removeFirst()
-            writeInProgress = false
-
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                listener.onError("Błąd zapisu charakterystyki: $status")
+            if (characteristic.uuid == notifyCharacteristic?.uuid) {
+                listener.onNotification(value.copyOf())
             }
-
-            handler.post { drainWriteQueue() }
         }
     }
 
