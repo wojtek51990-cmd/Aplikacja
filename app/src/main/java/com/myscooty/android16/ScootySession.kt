@@ -53,8 +53,15 @@ object ScootySession : ScootyBleManager.Listener {
     }
 
     override fun onNotification(bytes: ByteArray) {
-        val parsed = ScootyProtocol.parse(bytes, state)
-        if (parsed != null) state = parsed
+        if (bytes.isEmpty()) return
+        var offset = 0
+        while (offset < bytes.size) {
+            val end = minOf(offset + 20, bytes.size)
+            val packet = bytes.copyOfRange(offset, end)
+            val parsed = ScootyProtocol.parse(packet, state)
+            if (parsed != null) state = parsed
+            offset = end
+        }
         listeners.forEach { it.onNotification(bytes) }
     }
 
