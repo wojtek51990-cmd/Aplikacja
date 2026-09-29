@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MyScooty" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.MyScooty" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:colorAccent">#1565C0</item>
+        <item name="android:colorAccent">#00B8D4</item>
+        <item name="android:navigationBarColor">#09101A</item>
+        <item name="android:statusBarColor">#09101A</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>
