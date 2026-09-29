@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattService
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -28,6 +29,7 @@ class BleForegroundService : Service(), ScootyBleManager.Listener {
         ScootySession.initialize(applicationContext)
         ScootySession.addListener(this)
         createNotificationChannel()
+
         val notification = buildNotification(getString(R.string.notification_connecting))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -56,7 +58,8 @@ class BleForegroundService : Service(), ScootyBleManager.Listener {
         reconnectPending = true
         handler.postDelayed({
             try {
-                val adapter = getSystemService(BluetoothAdapter::class.java)
+                val bluetoothManager = getSystemService(BluetoothManager::class.java)
+                val adapter: BluetoothAdapter? = bluetoothManager?.adapter
                 val device = adapter?.getRemoteDevice(address)
                 if (device != null) ScootySession.connect(device)
             } catch (_: IllegalArgumentException) {
@@ -76,27 +79,37 @@ class BleForegroundService : Service(), ScootyBleManager.Listener {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStatus(text: String) = updateNotification(text)
+
     override fun onConnected(device: BluetoothDevice) {
         updateNotification(getString(R.string.notification_connected, safeName(device)))
     }
-    override fun onServicesDiscovered(gatt: BluetoothGatt, services: List<BluetoothGattService>) {
+
+    override fun onServicesDiscovered(
+        gatt: BluetoothGatt,
+        services: List<BluetoothGattService>
+    ) {
         updateNotification(getString(R.string.notification_ready))
     }
+
     override fun onNotification(bytes: ByteArray) {
         val s = ScootySession.state
-        updateNotification(getString(
-            R.string.notification_data,
-            s.speedDisplay,
-            s.speedUnitLabel,
-            s.batteryPercent
-        ))
+        updateNotification(
+            getString(
+                R.string.notification_data,
+                s.speedDisplay,
+                s.speedUnitLabel,
+                s.batteryPercent
+            )
+        )
     }
+
     override fun onDisconnected() {
         updateNotification(getString(R.string.notification_disconnected))
         if (prefs().getBoolean(KEY_AUTO_RECONNECT, true)) {
             prefs().getString(KEY_LAST_ADDRESS, null)?.let(::reconnectTo)
         }
     }
+
     override fun onError(text: String) = updateNotification(text)
 
     private fun safeName(device: BluetoothDevice): String =
