@@ -116,6 +116,36 @@ jobs:
           echo "Raport obejmuje oryginalny ZIP, wszystkie jego wpisy, APK, pełną listę plików APK, package/SDK z AAPT, uprawnienia, DEX, biblioteki natywne, manifest, zasoby, smali i ślady BLE/GATT." >> "$REPORT"
           echo "Oryginalny ZIP/APK nie jest modyfikowany." >> "$REPORT"
 
+      - name: Extract BLE protocol source and constants
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROTO="analysis/MY_SCOOTY_BLE_PROTOCOL.md"
+          echo "# My Scooty 1.0.13 — extracted BLE protocol" > "$PROTO"
+          echo >> "$PROTO"
+          echo "Źródło: zdekompilowany com.li.scooty.apk z oryginalnego ZIP." >> "$PROTO"
+          echo >> "$PROTO"
+          echo "## 1. Klasy BLE/parser/client" >> "$PROTO"
+          find analysis/decoded/com.li.scooty/apktool -type f -name "*.smali" | grep -E "/(BTPackage|BTOTOParseImpl|BTType|BleBluetoothService|BluetoothClient|IBluetoothClient|BTCallbackManager|BTParse|BTInfoListener)([^/]*)?\\.smali$" | sort | while read -r f; do
+            echo >> "$PROTO"
+            echo "### $f" >> "$PROTO"
+            sed -n "1,2400p" "$f" >> "$PROTO"
+          done
+          echo >> "$PROTO"
+          echo "## 2. UUID-y" >> "$PROTO"
+          grep -RhoE "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})" analysis/decoded/com.li.scooty/apktool 2>/dev/null | sort -u >> "$PROTO" || true
+          echo >> "$PROTO"
+          echo "## 3. BLE/GATT wywołania i stałe komend" >> "$PROTO"
+          grep -RniE "connectGatt|discoverServices|setCharacteristicNotification|writeCharacteristic|readCharacteristic|getCharacteristic|getService|BluetoothGattCharacteristic|BluetoothGattService|writeDescriptor|setValue|sendCmdData|parseC[0-9A-Fa-f]|const/(4|16|high16)|const-string" analysis/decoded/com.li.scooty/apktool/smali 2>/dev/null | grep -E "com/wx/(bluetooth|blesdk|utils)" | head -12000 >> "$PROTO" || true
+          echo >> "$PROTO"
+          echo "## 4. BTType — wszystkie funkcje danych" >> "$PROTO"
+          f=$(find analysis/decoded/com.li.scooty/apktool -type f -name "BTType.smali" | head -1); if [ -n "$f" ]; then cat "$f" >> "$PROTO"; fi
+          echo >> "$PROTO"
+          echo "## 5. Parser C2/C5/C9 i mapa danych" >> "$PROTO"
+          f=$(find analysis/decoded/com.li.scooty/apktool -type f -name "BTOTOParseImpl.smali" | head -1); if [ -n "$f" ]; then cat "$f" >> "$PROTO"; fi
+          echo >> "$PROTO"
+          echo "## 6. Rozmiar raportu" >> "$PROTO"
+          wc -c -l "$PROTO"
       - name: Upload complete analysis artifact
         uses: actions/upload-artifact@v4
         with:
