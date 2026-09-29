@@ -117,6 +117,19 @@ class MainActivity : AppCompatActivity(), ScootyBleManager.Listener {
             setTextColor(Color.GRAY)
         }
         root.addView(connectHelp, lp(0, 8, 0, 12))
+        root.addView(button("Pomoc i protokół") {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("My Scooty PL — pomoc")
+                .setMessage(
+                    "Połącz hulajnogę przez BLE. Kanał GATT: AB00, zapis AB01, powiadomienia AB02.\n\n" +
+                    "Odpowiedzi C2/C5/C9 są dekodowane tak jak w starej aplikacji. " +
+                    "Komendy mają format CC CMD VALUE 00 00 00 XOR FE i są wysyłane 12 razy.\n\n" +
+                    "Komunikacja BLE nie korzysta ze starej biblioteki 32-bit."
+                )
+                .setPositiveButton("OK", null)
+                .show()
+        }, lp(0, 0, 0, 12))
+
 
         dashboard = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(dashboard)
