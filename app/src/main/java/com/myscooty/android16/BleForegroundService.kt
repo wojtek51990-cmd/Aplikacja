@@ -80,6 +80,10 @@ class BleForegroundService : Service(), ScootyBleManager.Listener {
 
     override fun onStatus(text: String) = updateNotification(text)
 
+    override fun onDeviceFound(device: BluetoothDevice, rssi: Int) {
+        // Skanowanie jest obsługiwane przez ekran aplikacji; usługa tylko utrzymuje połączenie.
+    }
+
     override fun onConnected(device: BluetoothDevice) {
         updateNotification(getString(R.string.notification_connected, safeName(device)))
     }
