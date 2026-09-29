@@ -7,6 +7,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import java.util.concurrent.CopyOnWriteArraySet
 
+private const val MAX_RECENT_FRAMES = 20
+private const val PREFS = "myscooty_diagnostics"
+private const val KEY_STATE = "state"
+private const val KEY_LAST_FRAME = "last_frame"
+private const val KEY_LAST_TYPE = "last_type"
+private const val KEY_LAST_AT = "last_at"
+private const val KEY_HISTORY = "history"
+
 object ScootySession : ScootyBleManager.Listener {
     private var manager: ScootyBleManager? = null
     private val listeners = CopyOnWriteArraySet<ScootyBleManager.Listener>()
@@ -29,16 +37,6 @@ object ScootySession : ScootyBleManager.Listener {
     private val recentFramesBuffer = ArrayDeque<String>()
     private var preferences: SharedPreferences? = null
     private var lastPersistAtMs = 0L
-
-    companion object {
-        private const val MAX_RECENT_FRAMES = 20
-        private const val PREFS = "myscooty_diagnostics"
-        private const val KEY_STATE = "state"
-        private const val KEY_LAST_FRAME = "last_frame"
-        private const val KEY_LAST_TYPE = "last_type"
-        private const val KEY_LAST_AT = "last_at"
-        private const val KEY_HISTORY = "history"
-    }
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext

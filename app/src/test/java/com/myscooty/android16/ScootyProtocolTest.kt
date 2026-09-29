@@ -139,6 +139,14 @@ class ScootyProtocolTest {
     }
 
     @Test
+    fun originalToggleSemanticsAreStable() {
+        assertEquals(0, ScootyProtocol.lightCommandValue(4))
+        assertEquals(1, ScootyProtocol.lightCommandValue(1))
+        assertEquals(1, ScootyProtocol.shutdownCommandValue(1))
+        assertEquals(0, ScootyProtocol.shutdownCommandValue(0))
+    }
+
+    @Test
     fun originalCommandIsEightBytes() {
         assertEquals(
             "CC 09 01 00 00 00 C4 FE",

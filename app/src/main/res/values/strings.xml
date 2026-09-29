@@ -121,5 +121,5 @@
     <string name="notification_ready">BLE gotowe — odbiór danych</string>
     <string name="notification_disconnected">Rozłączono BLE</string>
     <string name="notification_bad_device">Nieprawidłowy zapisany adres urządzenia</string>
-    <string name="notification_data">Prędkość %.0f %s • bateria %d%%</string>
+    <string name="notification_data">Prędkość %1$.0f %2$s • bateria %3$d%%</string>
 </resources>
