@@ -64,13 +64,6 @@ data class ScootyBleProfile(
 )
 
 
-data class ScootyBleProfile(
-    val id: Int,
-    val name: String,
-    val notifyUuid: UUID,
-    val serviceUuid: UUID,
-    val writeUuid: UUID
-)
 
 object ScootyProtocol {
     const val CCCD_UUID = "00002902-0000-1000-8000-00805F9B34FB"
