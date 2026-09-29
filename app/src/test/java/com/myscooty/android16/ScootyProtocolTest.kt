@@ -63,7 +63,7 @@ class ScootyProtocolTest {
     }
 
     @Test
-    fun c9PreservesOverlappingRgbReads() {
+    fun c9PreservesOriginalOverlappingRgbReads() {
         val frame = ByteArray(20)
         frame[2] = 3
         frame[3] = 4
@@ -71,7 +71,7 @@ class ScootyProtocolTest {
         frame[5] = 6
         frame[6] = 7
         frame[7] = 8
-        frame[8] = 9
+        frame[8] = 0
         frame[9] = 8
         frame[10] = 1
         frame[11] = 2
@@ -82,12 +82,12 @@ class ScootyProtocolTest {
         frame[16] = 0xC9.toByte()
 
         val state = requireNotNull(ScootyProtocol.parse(frame))
-        assertEquals(0x0809, state.colorLightR)
-        assertEquals(0x0908, state.colorLightG)
-        assertEquals(0x0801, state.colorLightB)
-        assertEquals(0x0102, state.cruiseState)
-        assertEquals(0x0203, state.lightLumince)
-        assertEquals(0x0304, state.lightModel)
+        assertEquals(0x0801, state.colorLightR)
+        assertEquals(0x0102, state.colorLightG)
+        assertEquals(0x0203, state.colorLightB)
+        assertEquals(0x0304, state.cruiseState)
+        assertEquals(0x0405, state.lightLumince)
+        assertEquals(0x0506, state.lightModel)
         assertEquals(6, state.shutdown)
     }
 
