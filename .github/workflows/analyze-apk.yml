@@ -7,6 +7,9 @@ on:
       - ".github/workflows/analyze-apk.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   analyze:
     runs-on: ubuntu-latest
@@ -21,53 +24,117 @@ jobs:
           apktool --version
           aapt version
 
-      - name: Unpack archive and inspect APKs
+      - name: Unpack original ZIP and perform full inventory
+        shell: bash
         run: |
-          mkdir -p analysis
+          set -euo pipefail
+          rm -rf analysis
+          mkdir -p analysis/input analysis/decoded
           unzip -o "My+Scooty_1.0.13_APKPure.zip" -d analysis/input
-          echo "=== ARCHIVE CONTENTS ===" | tee analysis/report.txt
-          find analysis/input -type f -printf '%p %s bytes\n' | tee -a analysis/report.txt
 
-          for apk in $(find analysis/input -type f -name "*.apk"); do
+          REPORT="analysis/MY_SCOOTY_FULL_INVENTORY.md"
+          echo "# My Scooty 1.0.13 — pełna inwentaryzacja oryginalnego ZIP/APK" > "$REPORT"
+          echo >> "$REPORT"
+          echo "Źródło: My+Scooty_1.0.13_APKPure.zip" >> "$REPORT"
+          echo "ZIP SHA-256: $(sha256sum 'My+Scooty_1.0.13_APKPure.zip' | awk '{print $1}')" >> "$REPORT"
+          echo >> "$REPORT"
+
+          echo "## 1. Zawartość oryginalnego ZIP" >> "$REPORT"
+          echo >> "$REPORT"
+          unzip -l "My+Scooty_1.0.13_APKPure.zip" >> "$REPORT"
+          echo >> "$REPORT"
+
+          echo "## 2. Pliki po rozpakowaniu ZIP" >> "$REPORT"
+          find analysis/input -type f -printf '%s bytes\t%p\n' | sort -n >> "$REPORT"
+          echo >> "$REPORT"
+
+          echo "## 3. Liczba APK: $(find analysis/input -type f -iname '*.apk' | wc -l)" >> "$REPORT"
+          echo >> "$REPORT"
+
+          find analysis/input -type f -iname '*.apk' -print0 | while IFS= read -r -d '' apk; do
             name=$(basename "$apk" .apk)
-            dir="analysis/$name"
+            dir="analysis/decoded/$name"
             mkdir -p "$dir"
-            echo "" | tee -a analysis/report.txt
-            echo "===== APK: $apk =====" | tee -a analysis/report.txt
-            file "$apk" | tee -a analysis/report.txt
-            sha256sum "$apk" | tee "$dir/sha256.txt"
-            echo "--- AAPT BADGING ---" | tee -a analysis/report.txt
-            aapt dump badging "$apk" 2>&1 | tee "$dir/badging.txt" | tee -a analysis/report.txt
-            echo "--- NATIVE LIBRARIES ---" | tee -a analysis/report.txt
-            unzip -l "$apk" | grep -E "lib/[^/]+/.*\\.(so|so\\.gz)$" | tee "$dir/native-libs.txt" || true
-            echo "--- DEX FILES ---" | tee -a analysis/report.txt
-            unzip -l "$apk" | grep -E "\\.dex$" | tee "$dir/dex.txt" || true
-            echo "--- TOP-LEVEL FILES ---" | tee "$dir/list.txt"
-            unzip -l "$apk" | head -120 | tee -a "$dir/list.txt"
-            echo "--- APKTOOL DECODE ---" | tee -a analysis/report.txt
-            apktool d -f "$apk" -o "$dir/decoded" 2>&1 | tee "$dir/apktool.txt"
+
+            echo "## APK: $apk" >> "$REPORT"
+            echo >> "$REPORT"
+            echo "Rozmiar: $(stat -c '%s' "$apk") bytes" >> "$REPORT"
+            echo "SHA-256: $(sha256sum "$apk" | awk '{print $1}')" >> "$REPORT"
+            file "$apk" >> "$REPORT"
+            echo >> "$REPORT"
+
+            echo "### 3.1 Pełna lista plików APK" >> "$REPORT"
+            unzip -l "$apk" >> "$REPORT"
+            echo >> "$REPORT"
+
+            echo "### 3.2 AAPT badging / package / SDK / komponenty" >> "$REPORT"
+            aapt dump badging "$apk" 2>&1 | tee "$dir/badging.txt" >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.3 Uprawnienia" >> "$REPORT"
+            aapt dump permissions "$apk" 2>&1 | tee "$dir/permissions.txt" >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.4 Biblioteki natywne i architektury CPU" >> "$REPORT"
+            unzip -l "$apk" | grep -E 'lib/[^/]+/.*\.so$' | tee "$dir/native-libs.txt" >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.5 DEX" >> "$REPORT"
+            unzip -l "$apk" | grep -E '\.dex$' | tee "$dir/dex.txt" >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.6 BLE / Bluetooth / USB / lokalizacja — kandydaty" >> "$REPORT"
+            unzip -p "$apk" classes.dex 2>/dev/null | strings | grep -Ei 'bluetooth|ble|gatt|characteristic|descriptor|scooty|obd|usb|location|gps' | sort -u | head -500 >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.7 Dekompilacja APKTool i manifest" >> "$REPORT"
+            apktool d -f "$apk" -o "$dir/apktool" > "$dir/apktool.log" 2>&1 || true
+            if [ -f "$dir/apktool/AndroidManifest.xml" ]; then
+              sed -n '1,320p' "$dir/apktool/AndroidManifest.xml" >> "$REPORT"
+            fi
+            echo >> "$REPORT"
+
+            echo "### 3.8 Zasoby / assets / nazwy ekranów" >> "$REPORT"
+            find "$dir/apktool/res" "$dir/apktool/assets" -type f 2>/dev/null | sort | head -2000 >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.9 Klasy Smali" >> "$REPORT"
+            find "$dir/apktool" -type f -name '*.smali' | sort >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.10 Odwołania BLE/GATT" >> "$REPORT"
+            grep -RniE 'Bluetooth|BluetoothGatt|BluetoothDevice|BluetoothAdapter|ScanCallback|GattCallback|UUID|Characteristic|Descriptor|GATT' "$dir/apktool" 2>/dev/null | head -2000 >> "$REPORT" || true
+            echo >> "$REPORT"
+
+            echo "### 3.11 Biblioteki JNI (.so)" >> "$REPORT"
+            find "$dir/apktool/lib" -type f 2>/dev/null -printf '%p %s bytes\n' | sort >> "$REPORT" || true
+            echo >> "$REPORT"
           done
 
-      - name: Create detailed inventory
-        run: |
-          {
-            echo "=== DECODED FILE INVENTORY ==="
-            find analysis -type f -not -path "analysis/input/*" -printf '%p %s bytes\n' | sort
-            echo ""
-            echo "=== MANIFESTS ==="
-            find analysis -path "*/decoded/AndroidManifest.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,260p" "$1"' _ {} \;
-            echo ""
-            echo "=== RESOURCE STRINGS ==="
-            find analysis -path "*/decoded/res/values*/strings.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,260p" "$1"' _ {} \;
-            echo ""
-            echo "=== JAVA/SMALI COUNTS ==="
-            find analysis -path "*/decoded/smali*" -type f | wc -l
-            find analysis -path "*/decoded/smali*" -type f -name "*.smali" | head -50
-          } > analysis/inventory.txt
+          echo "## 4. Podsumowanie" >> "$REPORT"
+          echo >> "$REPORT"
+          echo "Raport obejmuje oryginalny ZIP, wszystkie jego wpisy, APK, pełną listę plików APK, package/SDK z AAPT, uprawnienia, DEX, biblioteki natywne, manifest, zasoby, smali i ślady BLE/GATT." >> "$REPORT"
+          echo "Oryginalny ZIP/APK nie jest modyfikowany." >> "$REPORT"
 
-      - name: Upload analysis
+      - name: Upload complete analysis artifact
         uses: actions/upload-artifact@v4
         with:
-          name: My-Scooty-APK-analysis
+          name: My-Scooty-FULL-analysis
           path: analysis
-          retention-days: 7
+          retention-days: 14
+
+      - name: Commit full inventory report to repository
+        shell: bash
+        run: |
+          set -e
+          mkdir -p inventory
+          cp analysis/MY_SCOOTY_FULL_INVENTORY.md inventory/MY_SCOOTY_FULL_INVENTORY.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add inventory/MY_SCOOTY_FULL_INVENTORY.md
+          if git diff --cached --quiet; then
+            echo "No inventory report changes."
+            exit 0
+          fi
+          git commit -m "Add full My Scooty APK inventory"
+          git push
