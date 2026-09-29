@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -58,18 +59,48 @@ class MainActivity : AppCompatActivity(), ScootyBleManager.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        System.loadLibrary("myscooty_native")
-        require(nativeAbiLevel() == 64) { "Wymagana biblioteka ARM64" }
+        Log.i("MyScootyStartup", "STEP 1: MainActivity.onCreate entered")
 
-        ScootySession.initialize(applicationContext)
-        ScootySession.addListener(this)
+        var nativeOk = false
+        try {
+            Log.i("MyScootyStartup", "STEP 2: System.loadLibrary(myscooty_native)")
+            System.loadLibrary("myscooty_native")
+            Log.i("MyScootyStartup", "STEP 3: native library loaded")
+            val abi = nativeAbiLevel()
+            Log.i("MyScootyStartup", "STEP 4: nativeAbiLevel()=$abi")
+            nativeOk = abi == 64
+            if (!nativeOk) Log.e("MyScootyStartup", "nativeAbiLevel() returned $abi, expected 64")
+        } catch (t: Throwable) {
+            Log.e("MyScootyStartup", "NATIVE STARTUP FAILURE", t)
+        }
+
+        try {
+            Log.i("MyScootyStartup", "STEP 5: ScootySession.initialize")
+            ScootySession.initialize(applicationContext)
+            ScootySession.addListener(this)
+            Log.i("MyScootyStartup", "STEP 6: ScootySession initialized")
+        } catch (t: Throwable) {
+            Log.e("MyScootyStartup", "SESSION STARTUP FAILURE", t)
+            throw t
+        }
+
+        Log.i("MyScootyStartup", "STEP 7: setContentView")
         setContentView(buildUi())
+        Log.i("MyScootyStartup", "STEP 8: setContentView completed")
         updateDashboard()
 
+        if (!nativeOk) {
+            Log.w("MyScootyStartup", "Native ABI check failed, but UI startup continues for diagnostics")
+        }
+
         if (!hasRequiredPermissions()) {
+            Log.i("MyScootyStartup", "STEP 9: requesting runtime permissions")
             permissionLauncher.launch(requiredPermissions())
         } else if (BleForegroundService.autoReconnectEnabled(this)) {
+            Log.i("MyScootyStartup", "STEP 9: starting BLE foreground reconnect")
             BleForegroundService.start(this)
+        } else {
+            Log.i("MyScootyStartup", "STEP 9: no foreground reconnect required")
         }
     }
 
