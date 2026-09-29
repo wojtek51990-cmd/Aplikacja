@@ -51,10 +51,19 @@ data class ScootyState(
     companion object { private const val MPH_FACTOR = 0.621371192237 }
 }
 
+/**
+ * The original 1.0.13 APK contains three interchangeable BLE profiles.
+ * Each profile is (notify characteristic, service, write characteristic).
+ */
+data class ScootyBleProfile(
+    val id: Int,
+    val name: String,
+    val notifyUuid: UUID,
+    val serviceUuid: UUID,
+    val writeUuid: UUID
+)
+
 object ScootyProtocol {
-    const val SERVICE_UUID = "0000AB00-0000-1000-8000-00805F9B34FB"
-    const val WRITE_UUID = "0000AB01-0000-1000-8000-00805F9B34FB"
-    const val NOTIFY_UUID = "0000AB02-0000-1000-8000-00805F9B34FB"
     const val CCCD_UUID = "00002902-0000-1000-8000-00805F9B34FB"
 
     const val CMD_GEAR = 2
@@ -66,29 +75,76 @@ object ScootyProtocol {
     const val CMD_MODE = 11
     const val CMD_POWER_OFF_TIME = 12
     const val CMD_FACTORY_RESET = 24
+
+    // Exact value used by BTPackage.sendCmdData() in the original APK.
     const val DEFAULT_COMMAND_REPEAT = 12
+    const val COMMAND_INTERVAL_MS = 3L
     const val PACKET_SIZE = 20
+
+    val PROFILES: List<ScootyBleProfile> = listOf(
+        ScootyBleProfile(
+            1, "AB",
+            UUID.fromString("0000AB02-0000-1000-8000-00805F9B34FB"),
+            UUID.fromString("0000AB00-0000-1000-8000-00805F9B34FB"),
+            UUID.fromString("0000AB01-0000-1000-8000-00805F9B34FB")
+        ),
+        ScootyBleProfile(
+            2, "FF",
+            UUID.fromString("0000FF02-0000-1000-8000-00805F9B34FB"),
+            UUID.fromString("0000FF12-0000-1000-8000-00805F9B34FB"),
+            UUID.fromString("0000FF01-0000-1000-8000-00805F9B34FB")
+        ),
+        ScootyBleProfile(
+            3, "AD",
+            UUID.fromString("0000AD02-0000-1000-8000-00805F9B34FB"),
+            UUID.fromString("0000AD00-0000-1000-8000-00805F9B34FB"),
+            UUID.fromString("0000AD01-0000-1000-8000-00805F9B34FB")
+        )
+    )
+
+    const val SERVICE_UUID = "0000AB00-0000-1000-8000-00805F9B34FB"
+    const val WRITE_UUID = "0000AB01-0000-1000-8000-00805F9B34FB"
+    const val NOTIFY_UUID = "0000AB02-0000-1000-8000-00805F9B34FB"
 
     fun serviceUuid(): UUID = UUID.fromString(SERVICE_UUID)
     fun writeUuid(): UUID = UUID.fromString(WRITE_UUID)
     fun notifyUuid(): UUID = UUID.fromString(NOTIFY_UUID)
     fun cccdUuid(): UUID = UUID.fromString(CCCD_UUID)
 
+    fun profileForService(uuid: UUID): ScootyBleProfile? =
+        PROFILES.firstOrNull { it.serviceUuid == uuid }
+
     fun command(command: Int, value: Int): ByteArray {
         require(command in 0..255)
         require(value in 0..255)
+        // Exact original pack(type,data):
+        // CC command value 00 00 00 checksum 00 FE
         return byteArrayOf(
-            0xCC.toByte(), command.toByte(), value.toByte(),
-            0, 0, 0, (0xCC xor command xor value).toByte(), 0xFE.toByte()
+            0xCC.toByte(),
+            command.toByte(),
+            value.toByte(),
+            0,
+            0,
+            0,
+            (0xCC xor command xor value).toByte(),
+            0xFE.toByte()
         )
     }
 
-    fun repeatedCommand(command: Int, value: Int, count: Int = DEFAULT_COMMAND_REPEAT): List<ByteArray> =
+    fun repeatedCommand(
+        command: Int,
+        value: Int,
+        count: Int = DEFAULT_COMMAND_REPEAT
+    ): List<ByteArray> =
         List(count.coerceAtLeast(1)) { command(command, value) }
 
-    // Oryginalny parser: typ = packet[length-4], payload = packet[2 until 16].
+    /**
+     * Original BTOTOParseImpl.unpack():
+     * accepts >=20 bytes, takes type from length-4 and payload bytes 2..15.
+     */
     fun parse(packet: ByteArray, previous: ScootyState = ScootyState()): ScootyState? {
         if (packet.size < PACKET_SIZE) return null
+
         val type = packet[packet.size - 4].toInt() and 0xFF
         if (type != 0xC2 && type != 0xC5 && type != 0xC9) return null
 
@@ -139,13 +195,16 @@ object ScootyProtocol {
     }
 
     fun packetType(packet: ByteArray): Int? =
-        if (packet.size < PACKET_SIZE) null else packet[packet.size - 4].toInt() and 0xFF
+        if (packet.size < PACKET_SIZE) null
+        else packet[packet.size - 4].toInt() and 0xFF
 
     fun hex(bytes: ByteArray): String =
         bytes.joinToString(" ") { "%02X".format(Locale.US, it.toInt() and 0xFF) }
 
     private fun u8(bytes: ByteArray, offset: Int): Int = bytes[offset].toInt() and 0xFF
-    private fun u16be(bytes: ByteArray, offset: Int): Int = (u8(bytes, offset) shl 8) or u8(bytes, offset + 1)
+    private fun u16be(bytes: ByteArray, offset: Int): Int =
+        (u8(bytes, offset) shl 8) or u8(bytes, offset + 1)
+
     private fun u32be(bytes: ByteArray, offset: Int): Long =
         (u16be(bytes, offset).toLong() shl 16) or u16be(bytes, offset + 2).toLong()
 }
