@@ -65,8 +65,19 @@ class DiagnosticsActivity : AppCompatActivity(), ScootyBleManager.Listener {
                 ", CRUISE=" + s.cruiseState + ", LOCK=" + s.lock
         )
         addPair(
+            getString(R.string.ble_profile),
+            ScootySession.currentProfile()?.let { it.name + " / " + it.serviceUuid } ?: "—"
+        )
+        addPair(
             getString(R.string.raw_frame),
             ScootySession.lastFrame?.let(ScootyProtocol::hex) ?: "—"
+        )
+        addPair(
+            getString(R.string.recent_frames),
+            if (ScootySession.recentFrames.isEmpty()) "—"
+            else ScootySession.recentFrames.take(10).mapIndexed { index, frame ->
+                "#" + (index + 1) + " " + frame
+            }.joinToString("\n")
         )
     }
 

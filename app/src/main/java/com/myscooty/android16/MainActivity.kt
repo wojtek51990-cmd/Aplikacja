@@ -186,7 +186,7 @@ class MainActivity : AppCompatActivity(), ScootyBleManager.Listener {
             button(getString(R.string.light_on_off)) {
                 ScootySession.sendCommand(
                     ScootyProtocol.CMD_LIGHT,
-                    if (ScootySession.state.lightState == 1) 0 else 1
+                    ScootyProtocol.lightCommandValue(ScootySession.state.lightState)
                 )
             },
             button(getString(R.string.cruise_on_off)) {
@@ -211,7 +211,7 @@ class MainActivity : AppCompatActivity(), ScootyBleManager.Listener {
                     .setPositiveButton(R.string.confirm) { _, _ ->
                         ScootySession.sendCommand(
                             ScootyProtocol.CMD_SHUTDOWN,
-                            if (ScootySession.state.shutdown == 1) 0 else 1
+                            ScootyProtocol.shutdownCommandValue(ScootySession.state.shutdown)
                         )
                     }
                     .show()
@@ -381,7 +381,14 @@ class MainActivity : AppCompatActivity(), ScootyBleManager.Listener {
 
     override fun onServicesDiscovered(gatt: BluetoothGatt, services: List<BluetoothGattService>) {
         runOnUiThread {
-            status.text = if (services.any { it.uuid == ScootyProtocol.serviceUuid() })
+            val protocolReady = services.any { service ->
+                ScootyProtocol.PROFILES.any { profile ->
+                    profile.serviceUuid == service.uuid &&
+                        service.getCharacteristic(profile.notifyUuid) != null &&
+                        service.getCharacteristic(profile.writeUuid) != null
+                }
+            }
+            status.text = if (protocolReady)
                 getString(R.string.status_protocol_ready)
             else getString(R.string.status_protocol_missing)
             updateDashboard()

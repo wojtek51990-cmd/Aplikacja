@@ -53,12 +53,12 @@ class SettingsActivity : AppCompatActivity(), ScootyBleManager.Listener {
 
         root.addView(section(getString(R.string.power_timer)), lp(b = 5))
         root.addView(button(getString(R.string.choose_timer)) {
-            val timeValues = listOf(0, 5, 10, 15, 20, 30, 40, 50, 60)
+            val timeValues = (1..12).map { it * 5 }
             AlertDialog.Builder(this)
                 .setTitle(R.string.timer_title)
                 .setItems(
                     timeValues.map {
-                        if (it == 0) getString(R.string.timer_off) else it.toString() + " min"
+                        it.toString() + " min"
                     }.toTypedArray()
                 ) { _, which ->
                     ScootySession.sendCommand(ScootyProtocol.CMD_POWER_OFF_TIME, timeValues[which])

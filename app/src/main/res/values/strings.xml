@@ -101,6 +101,8 @@
     <string name="work_time_raw">Praca/czas surowy</string>
     <string name="state_flags">Stany</string>
     <string name="raw_frame">Pełna ramka BLE</string>
+    <string name="ble_profile">Aktywny profil BLE</string>
+    <string name="recent_frames">Ostatnie 10 ramek RX (trwale zapisane)</string>
 
     <string name="help_title">My Scooty PL — pomoc</string>
     <string name="help_message">Aplikacja jest napisana natywnie dla Androida 16 i nie korzysta ze starej biblioteki 32-bitowej. BLE używa usługi AB00, zapisu AB01 i powiadomień AB02. Odbiornik C2/C5/C9 jest dekodowany według zdekompilowanego parsera My Scooty 1.0.13. Komendy mają format CC CMD VALUE 00 00 00 XOR FE i są wysyłane 12 razy jak w oryginale. Pola bez potwierdzonej jednostki pozostają pokazane jako surowe.</string>

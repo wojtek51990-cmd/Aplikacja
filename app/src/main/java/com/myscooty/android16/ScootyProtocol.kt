@@ -48,7 +48,33 @@ data class ScootyState(
     val odometerDisplay: Double get() = if (isMph) odometerKm * MPH_FACTOR else odometerKm
     val tripDisplay: Double get() = if (isMph) tripKm * MPH_FACTOR else tripKm
 
-    companion object { private const val MPH_FACTOR = 0.621371192237 }
+    fun toJson(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("voltageRaw", voltageRaw); put("speedRaw", speedRaw); put("mileageTotalRaw", mileageTotalRaw)
+        put("workingCurrentRaw", workingCurrentRaw); put("systemTempRaw", systemTempRaw); put("wheelSize", wheelSize)
+        put("mileageCurrentRaw", mileageCurrentRaw); put("gearSpeed", gearSpeed); put("gear", gear); put("batteryPercent", batteryPercent)
+        put("maxSpeed", maxSpeed); put("malfunction", malfunction); put("closeTime", closeTime); put("maxGears", maxGears)
+        put("strength", strength); put("sensitivity", sensitivity); put("cruise", cruise); put("mode", mode); put("gyro", gyro)
+        put("lock", lock); put("headlight", headlight); put("lightState", lightState); put("speedLimit", speedLimit)
+        put("turnLightState", turnLightState); put("unit", unit); put("breathState", breathState); put("cyclingState", cyclingState)
+        put("colorLightR", colorLightR); put("colorLightG", colorLightG); put("colorLightB", colorLightB); put("cruiseState", cruiseState)
+        put("lightLumince", lightLumince); put("lightModel", lightModel); put("shutdown", shutdown)
+    }
+    companion object {
+        private const val MPH_FACTOR = 0.621371192237
+        fun fromJson(json: org.json.JSONObject): ScootyState = ScootyState(
+            voltageRaw = json.optInt("voltageRaw"), speedRaw = json.optInt("speedRaw"), mileageTotalRaw = json.optLong("mileageTotalRaw"),
+            workingCurrentRaw = json.optInt("workingCurrentRaw"), systemTempRaw = json.optInt("systemTempRaw"), wheelSize = json.optInt("wheelSize"),
+            mileageCurrentRaw = json.optLong("mileageCurrentRaw"), gearSpeed = json.optInt("gearSpeed"), gear = json.optInt("gear"),
+            batteryPercent = json.optInt("batteryPercent"), maxSpeed = json.optInt("maxSpeed"), malfunction = json.optInt("malfunction"),
+            closeTime = json.optInt("closeTime"), maxGears = json.optInt("maxGears"), strength = json.optInt("strength"),
+            sensitivity = json.optInt("sensitivity"), cruise = json.optInt("cruise"), mode = json.optInt("mode"), gyro = json.optInt("gyro"),
+            lock = json.optInt("lock"), headlight = json.optInt("headlight"), lightState = json.optInt("lightState"),
+            speedLimit = json.optInt("speedLimit"), turnLightState = json.optInt("turnLightState"), unit = json.optInt("unit"),
+            breathState = json.optInt("breathState"), cyclingState = json.optInt("cyclingState"), colorLightR = json.optInt("colorLightR"),
+            colorLightG = json.optInt("colorLightG"), colorLightB = json.optInt("colorLightB"), cruiseState = json.optInt("cruiseState"),
+            lightLumince = json.optInt("lightLumince"), lightModel = json.optInt("lightModel"), shutdown = json.optInt("shutdown")
+        )
+    }
 }
 
 data class ScootyBleProfile(
@@ -125,6 +151,12 @@ object ScootyProtocol {
         count: Int = DEFAULT_COMMAND_REPEAT
     ): List<ByteArray> =
         List(count.coerceAtLeast(1)) { command(command, value) }
+    /** Exact toggle logic from original My Scooty 1.0.13 MainActivity. */
+    fun lightCommandValue(currentState: Int): Int = if (currentState == 4) 0 else 1
+
+    /** Exact shutdown toggle logic from original My Scooty 1.0.13 MainActivity. */
+    fun shutdownCommandValue(currentState: Int): Int = if (currentState == 1) 1 else 0
+
 
     fun parse(packet: ByteArray, previous: ScootyState = ScootyState()): ScootyState? {
         if (packet.size < PACKET_SIZE) return null
