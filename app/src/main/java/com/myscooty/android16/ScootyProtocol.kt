@@ -56,6 +56,11 @@ data class ScootyState(
 }
 
 object ScootyProtocol {
+    fun serviceUuid(): java.util.UUID = java.util.UUID.fromString(SERVICE_UUID)
+    fun writeUuid(): java.util.UUID = java.util.UUID.fromString(WRITE_UUID)
+    fun notifyUuid(): java.util.UUID = java.util.UUID.fromString(NOTIFY_UUID)
+    fun cccdUuid(): java.util.UUID = java.util.UUID.fromString(CCCD_UUID)
+
     const val SERVICE_UUID = "0000AB00-0000-1000-8000-00805F9B34FB"
     const val WRITE_UUID = "0000AB01-0000-1000-8000-00805F9B34FB"
     const val NOTIFY_UUID = "0000AB02-0000-1000-8000-00805F9B34FB"
