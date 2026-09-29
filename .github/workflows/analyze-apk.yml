@@ -17,8 +17,9 @@ jobs:
       - name: Install APK analysis tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y unzip zip
-          curl -L -o /tmp/apktool.jar https://github.com/iBotPeaches/Apktool/releases/latest/download/apktool.jar
+          sudo apt-get install -y unzip zip file aapt apktool
+          apktool --version
+          aapt version
 
       - name: Unpack archive and inspect APKs
         run: |
@@ -34,34 +35,34 @@ jobs:
             echo "" | tee -a analysis/report.txt
             echo "===== APK: $apk =====" | tee -a analysis/report.txt
             file "$apk" | tee -a analysis/report.txt
-            echo "--- SHA256 ---" | tee -a analysis/report.txt
-            sha256sum "$apk" | tee -a analysis/report.txt
+            sha256sum "$apk" | tee "$dir/sha256.txt"
             echo "--- AAPT BADGING ---" | tee -a analysis/report.txt
             aapt dump badging "$apk" 2>&1 | tee "$dir/badging.txt" | tee -a analysis/report.txt
             echo "--- NATIVE LIBRARIES ---" | tee -a analysis/report.txt
             unzip -l "$apk" | grep -E "lib/[^/]+/.*\\.(so|so\\.gz)$" | tee "$dir/native-libs.txt" || true
             echo "--- DEX FILES ---" | tee -a analysis/report.txt
-            unzip -l "$apk" | grep -E "\.dex$" | tee "$dir/dex.txt" || true
-            echo "--- TOP-LEVEL FILES ---" | tee -a analysis/report.txt
-            unzip -l "$apk" | head -80 | tee "$dir/list.txt"
+            unzip -l "$apk" | grep -E "\\.dex$" | tee "$dir/dex.txt" || true
+            echo "--- TOP-LEVEL FILES ---" | tee "$dir/list.txt"
+            unzip -l "$apk" | head -120 | tee -a "$dir/list.txt"
             echo "--- APKTOOL DECODE ---" | tee -a analysis/report.txt
-            java -jar /tmp/apktool.jar d -f "$apk" -o "$dir/decoded" 2>&1 | tee "$dir/apktool.txt" || true
+            apktool d -f "$apk" -o "$dir/decoded" 2>&1 | tee "$dir/apktool.txt"
           done
 
-      - name: Create compact source/resource inventory
+      - name: Create detailed inventory
         run: |
           {
             echo "=== DECODED FILE INVENTORY ==="
-            find analysis -type f \
-              -not -path "analysis/input/*" \
-              -not -path "*/build/*" \
-              -printf '%p %s bytes\n' | sort
+            find analysis -type f -not -path "analysis/input/*" -printf '%p %s bytes\n' | sort
             echo ""
             echo "=== MANIFESTS ==="
-            find analysis -path "*/decoded/AndroidManifest.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,240p" "$1"' _ {} \;
+            find analysis -path "*/decoded/AndroidManifest.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,260p" "$1"' _ {} \;
             echo ""
-            echo "=== STRING RESOURCE DIRECTORIES ==="
-            find analysis -type d -path "*/decoded/res/values*" -print
+            echo "=== RESOURCE STRINGS ==="
+            find analysis -path "*/decoded/res/values*/strings.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,260p" "$1"' _ {} \;
+            echo ""
+            echo "=== JAVA/SMALI COUNTS ==="
+            find analysis -path "*/decoded/smali*" -type f | wc -l
+            find analysis -path "*/decoded/smali*" -type f -name "*.smali" | head -50
           } > analysis/inventory.txt
 
       - name: Upload analysis
