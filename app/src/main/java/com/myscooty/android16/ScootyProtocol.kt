@@ -162,5 +162,5 @@ object ScootyProtocol {
         u8(bytes, offset) or (u8(bytes, offset + 1) shl 8)
 
     private fun u32(bytes: ByteArray, offset: Int): Long =
-        u16(bytes, offset).toLong().shl(16) or u16(bytes, offset + 2).toLong()
+        u16(bytes, offset).toLong() or (u16(bytes, offset + 2).toLong() shl 16)
 }
