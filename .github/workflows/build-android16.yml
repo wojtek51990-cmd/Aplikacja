@@ -50,14 +50,59 @@ jobs:
       - name: Budowanie APK debug + release
         run: gradle assembleDebug assembleRelease --stacktrace
 
-      - name: Weryfikacja ARM64
+      - name: Pełna diagnostyka APK ARM64 + JNI
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           APK="$(find app/build/outputs/apk/debug -type f -name "*.apk" | head -n 1)"
           test -n "$APK"
+          echo "=== APK ==="
+          ls -lh "$APK"
+          echo "=== Biblioteka JNI w APK ==="
+          unzip -l "$APK" | grep "lib/arm64-v8a/"
           unzip -l "$APK" | grep -q "lib/arm64-v8a/libmyscooty_native.so"
-          echo "Potwierdzono bibliotekę ARM64-v8a w $APK"
+          echo "OK: lib/arm64-v8a/libmyscooty_native.so jest w APK"
+          rm -rf /tmp/myscooty-apk-check
+          mkdir -p /tmp/myscooty-apk-check
+          unzip -q "$APK" "lib/arm64-v8a/libmyscooty_native.so" -d /tmp/myscooty-apk-check
+          LIB="/tmp/myscooty-apk-check/lib/arm64-v8a/libmyscooty_native.so"
+          echo "=== ELF ==="
+          file "$LIB"
+          readelf -h "$LIB" | grep -E "Class:|Machine:"
+          echo "=== Eksport JNI ==="
+          readelf -Ws "$LIB" | grep "Java_com_myscooty_android16_MainActivity_nativeAbiLevel"
+          echo "OK: symbol JNI nativeAbiLevel jest eksportowany"
+          echo "=== Manifest / application ==="
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt2" dump badging "$APK" | grep -E "package:|targetSdkVersion|uses-feature|uses-permission"
+
+      - name: Test uruchomieniowy APK na emulatorze ARM64
+        uses: reactivecircus/android-emulator-runner@v2
+        timeout-minutes: 25
+        with:
+          api-level: 30
+          target: google_apis
+          arch: arm64-v8a
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            APK="$GITHUB_WORKSPACE/app/build/outputs/apk/debug/app-debug.apk"
+            adb install -r "$APK"
+            adb logcat -c
+            adb shell am force-stop com.myscooty.android16.debug || true
+            adb shell monkey -p com.myscooty.android16.debug 1 >/dev/null
+            sleep 8
+            echo "=== Proces aplikacji ==="
+            adb shell pidof com.myscooty.android16.debug
+            echo "=== Startup log ==="
+            adb logcat -d -v time -s MyScootyStartup:E MyScootyStartup:I AndroidRuntime:E *:S
+            echo "=== Sprawdzanie FATAL EXCEPTION ==="
+            if adb logcat -d | grep -q "FATAL EXCEPTION"; then
+              adb logcat -d -v time | tail -n 300
+              exit 1
+            fi
+            echo "OK: APK uruchomił się bez wyjątku startowego"
 
       - name: Publikuj APK
         uses: actions/upload-artifact@v4
