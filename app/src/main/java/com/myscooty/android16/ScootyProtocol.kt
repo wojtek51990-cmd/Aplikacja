@@ -83,7 +83,6 @@ object ScootyProtocol {
     const val COMMAND_INTERVAL_MS = 3L
     const val PACKET_SIZE = 20
 
-    // Dokładnie trzy profile z oryginalnego BleConfig.Builder 1.0.13.
     val PROFILES: List<ScootyBleProfile> = listOf(
         ScootyBleProfile(1, "AB", UUID.fromString(NOTIFY_UUID), UUID.fromString(SERVICE_UUID), UUID.fromString(WRITE_UUID)),
         ScootyBleProfile(2, "FF",
