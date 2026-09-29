@@ -1,0 +1,72 @@
+name: Analyze My Scooty APK
+
+on:
+  push:
+    paths:
+      - "My+Scooty_1.0.13_APKPure.zip"
+      - ".github/workflows/analyze-apk.yml"
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install APK analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip zip
+          curl -L -o /tmp/apktool.jar https://github.com/iBotPeaches/Apktool/releases/latest/download/apktool.jar
+
+      - name: Unpack archive and inspect APKs
+        run: |
+          mkdir -p analysis
+          unzip -o "My+Scooty_1.0.13_APKPure.zip" -d analysis/input
+          echo "=== ARCHIVE CONTENTS ===" | tee analysis/report.txt
+          find analysis/input -type f -printf '%p %s bytes\n' | tee -a analysis/report.txt
+
+          for apk in $(find analysis/input -type f -name "*.apk"); do
+            name=$(basename "$apk" .apk)
+            dir="analysis/$name"
+            mkdir -p "$dir"
+            echo "" | tee -a analysis/report.txt
+            echo "===== APK: $apk =====" | tee -a analysis/report.txt
+            file "$apk" | tee -a analysis/report.txt
+            echo "--- SHA256 ---" | tee -a analysis/report.txt
+            sha256sum "$apk" | tee -a analysis/report.txt
+            echo "--- AAPT BADGING ---" | tee -a analysis/report.txt
+            aapt dump badging "$apk" 2>&1 | tee "$dir/badging.txt" | tee -a analysis/report.txt
+            echo "--- NATIVE LIBRARIES ---" | tee -a analysis/report.txt
+            unzip -l "$apk" | grep -E "lib/[^/]+/.*\\.(so|so\\.gz)$" | tee "$dir/native-libs.txt" || true
+            echo "--- DEX FILES ---" | tee -a analysis/report.txt
+            unzip -l "$apk" | grep -E "\.dex$" | tee "$dir/dex.txt" || true
+            echo "--- TOP-LEVEL FILES ---" | tee -a analysis/report.txt
+            unzip -l "$apk" | head -80 | tee "$dir/list.txt"
+            echo "--- APKTOOL DECODE ---" | tee -a analysis/report.txt
+            java -jar /tmp/apktool.jar d -f "$apk" -o "$dir/decoded" 2>&1 | tee "$dir/apktool.txt" || true
+          done
+
+      - name: Create compact source/resource inventory
+        run: |
+          {
+            echo "=== DECODED FILE INVENTORY ==="
+            find analysis -type f \
+              -not -path "analysis/input/*" \
+              -not -path "*/build/*" \
+              -printf '%p %s bytes\n' | sort
+            echo ""
+            echo "=== MANIFESTS ==="
+            find analysis -path "*/decoded/AndroidManifest.xml" -print -exec sh -c 'echo "--- $1"; sed -n "1,240p" "$1"' _ {} \;
+            echo ""
+            echo "=== STRING RESOURCE DIRECTORIES ==="
+            find analysis -type d -path "*/decoded/res/values*" -print
+          } > analysis/inventory.txt
+
+      - name: Upload analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: My-Scooty-APK-analysis
+          path: analysis
+          retention-days: 7
